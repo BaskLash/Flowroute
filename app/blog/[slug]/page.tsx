@@ -4,7 +4,6 @@ import Link from "next/link"
 import { ArrowLeft, Route, Clock, Calendar } from "lucide-react"
 import { getBlogPost, getAllBlogSlugs } from "@/lib/blog-data"
 import { Button } from "@/components/ui/button"
-import { BlogContent } from "@/components/blog/blog-content"
 import { ReadingProgress } from "@/components/blog/reading-progress"
 
 interface BlogPostPageProps {
@@ -14,6 +13,82 @@ interface BlogPostPageProps {
 export async function generateStaticParams() {
   const slugs = getAllBlogSlugs()
   return slugs.map((slug) => ({ slug }))
+}
+
+function renderMarkdown(content: string) {
+  const lines = content.trimStart().split("\n")
+  const elements: React.ReactNode[] = []
+  let listItems: React.ReactNode[] = []
+  let isFirstLine = true
+
+  const flushList = () => {
+    if (listItems.length > 0) {
+      elements.push(
+        <ul key={`list-${elements.length}`} className="flex flex-col gap-2 pl-6 list-disc">
+          {listItems}
+        </ul>
+      )
+      listItems = []
+    }
+  }
+
+  const formatInline = (text: string) =>
+    text
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="text-foreground">$1</strong>')
+      .replace(/\*(.*?)\*/g, "<em>$1</em>")
+      .replace(
+        /\[([^\]]+)\]\(([^)]+)\)/g,
+        '<a href="$2" class="text-primary underline hover:opacity-80 transition-colors" target="_blank" rel="noopener noreferrer">$1</a>'
+      )
+
+  lines.forEach((line, i) => {
+    const trimmed = line.trim()
+
+    // ✅ Skip first H1 (title duplication fix)
+    if (isFirstLine && trimmed.startsWith("# ")) {
+      isFirstLine = false
+      return
+    }
+    isFirstLine = false
+
+    if (trimmed === "---") {
+      flushList()
+      elements.push(<hr key={`hr-${i}`} className="my-8 border-border" />)
+    } else if (trimmed.startsWith("## ")) {
+      flushList()
+      elements.push(
+        <h2 key={`h2-${i}`} className="text-2xl sm:text-3xl mt-12 mb-6 font-bold">
+          {trimmed.replace("## ", "")}
+        </h2>
+      )
+    } else if (trimmed.startsWith("### ")) {
+      flushList()
+      elements.push(
+        <h3 key={`h3-${i}`} className="text-xl sm:text-2xl mt-8 mb-4 font-semibold">
+          {trimmed.replace("### ", "")}
+        </h3>
+      )
+    } else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+      const itemContent = trimmed.replace(/^[-*] /, "")
+      listItems.push(
+        <li key={`li-${i}`}>
+          <span dangerouslySetInnerHTML={{ __html: formatInline(itemContent) }} />
+        </li>
+      )
+    } else if (trimmed === "") {
+      flushList()
+    } else {
+      flushList()
+      elements.push(
+        <p key={`p-${i}`} className="my-4 text-muted-foreground leading-relaxed">
+          <span dangerouslySetInnerHTML={{ __html: formatInline(trimmed) }} />
+        </p>
+      )
+    }
+  })
+
+  flushList()
+  return elements
 }
 
 export async function generateMetadata({
@@ -95,12 +170,15 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                 <span>{post.readTime}</span>
               </div>
             </div>
+
             <h1 className="mt-4 text-3xl font-bold tracking-tight text-balance sm:text-4xl lg:text-5xl">
               {post.title}
             </h1>
+
             <p className="mt-4 text-lg text-muted-foreground">
               {post.excerpt}
             </p>
+
             <div className="mt-6 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
                 <Route className="h-5 w-5 text-primary" />
@@ -112,7 +190,9 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
             </div>
           </header>
 
-          <BlogContent content={post.content} slug={post.slug} />
+          <div className="prose prose-lg max-w-none prose-headings:font-bold prose-p:text-muted-foreground prose-p:leading-relaxed prose-strong:text-foreground prose-a:text-primary prose-a:no-underline hover:prose-a:opacity-80 prose-li:text-muted-foreground">
+            {renderMarkdown(post.content)}
+          </div>
         </article>
 
         {/* CTA */}
