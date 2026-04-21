@@ -2,11 +2,11 @@
 
 import { motion } from "framer-motion"
 import { useInView } from "framer-motion"
-import { useRef } from "react"
 import { Clock, Calendar, AlertTriangle } from "lucide-react"
+import { useSectionView } from "@/hooks/use-section-view"
 
 export function RealitySection() {
-  const ref = useRef(null)
+  const ref = useSectionView<HTMLElement>("reality")
   const isInView = useInView(ref, { once: true, margin: "-100px" })
 
   const stats = [

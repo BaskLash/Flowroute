@@ -1,66 +1,89 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { sendGAEvent } from "@next/third-parties/google"
+import {
+  trackBlogArticleComplete,
+  trackBlogArticleRead,
+  trackBlogArticleView,
+  trackScrollDepth,
+} from "@/lib/analytics"
 
 interface BlogContentProps {
   content: string
   slug: string
+  readTime?: string
 }
 
-export function BlogContent({ content, slug }: BlogContentProps) {
-  const startTime = useRef<number>(Date.now())
+/**
+ * Parses read-time strings like "7 min read" → 7 (minutes). Default 5.
+ */
+function parseReadMinutes(label?: string): number {
+  if (!label) return 5
+  const match = label.match(/(\d+)/)
+  return match ? Number.parseInt(match[1], 10) : 5
+}
+
+export function BlogContent({ content, slug, readTime }: BlogContentProps) {
+  const startedAt = useRef<number>(0)
+  const readFired = useRef(false)
+  const completeFired = useRef(false)
   const scrollMilestones = useRef<Set<number>>(new Set())
 
   useEffect(() => {
-    // Track blog click
-    sendGAEvent("event", "blog_click", {
-      event_category: "blog",
-      event_label: slug,
-    })
+    startedAt.current = performance.now()
+    trackBlogArticleView(slug, readTime)
 
-    const handleScroll = () => {
-      const articleElement = document.querySelector("article")
-      if (!articleElement) return
+    const minReadDwellMs = Math.round(parseReadMinutes(readTime) * 60 * 1000 * 0.3)
 
-      const rect = articleElement.getBoundingClientRect()
-      const scrollHeight = rect.height - window.innerHeight
-      const scrolled = -rect.top
-      const scrollPercent = Math.min(100, Math.max(0, Math.round((scrolled / scrollHeight) * 100)))
-
-      const milestones = [25, 50, 75, 100]
-      milestones.forEach((milestone) => {
-        if (scrollPercent >= milestone && !scrollMilestones.current.has(milestone)) {
-          scrollMilestones.current.add(milestone)
-          sendGAEvent("event", "blog_scroll_depth", {
-            event_category: "blog",
-            event_label: slug,
-            value: milestone,
-          })
+    let ticking = false
+    const onScroll = () => {
+      if (ticking) return
+      ticking = true
+      requestAnimationFrame(() => {
+        const article = document.querySelector("article")
+        if (!article) {
+          ticking = false
+          return
         }
+        const rect = article.getBoundingClientRect()
+        const scrollable = rect.height - window.innerHeight
+        const scrolled = -rect.top
+        const pct =
+          scrollable > 0
+            ? Math.min(100, Math.max(0, Math.round((scrolled / scrollable) * 100)))
+            : 0
+
+        for (const milestone of [25, 50, 75, 100]) {
+          if (pct >= milestone && !scrollMilestones.current.has(milestone)) {
+            scrollMilestones.current.add(milestone)
+            trackScrollDepth(milestone)
+          }
+        }
+
+        const dwell_ms = Math.round(performance.now() - startedAt.current)
+
+        if (!readFired.current && pct >= 75 && dwell_ms >= minReadDwellMs) {
+          readFired.current = true
+          trackBlogArticleRead(slug, pct, dwell_ms)
+        }
+
+        if (!completeFired.current && pct >= 95) {
+          completeFired.current = true
+          trackBlogArticleComplete(slug)
+        }
+
+        ticking = false
       })
     }
 
-    window.addEventListener("scroll", handleScroll, { passive: true })
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [slug, readTime])
 
-    // Track time on page when leaving
-    return () => {
-      window.removeEventListener("scroll", handleScroll)
-      const timeOnPage = Math.round((Date.now() - startTime.current) / 1000)
-      sendGAEvent("event", "blog_time_on_page", {
-        event_category: "blog",
-        event_label: slug,
-        value: timeOnPage,
-      })
-    }
-  }, [slug])
-
-  // Parse markdown-like content to HTML
   const parseContent = (text: string) => {
     return text
       .split("\n\n")
       .map((block, index) => {
-        // Headers
         if (block.startsWith("# ")) {
           return (
             <h1 key={index} className="mb-6 mt-12 text-3xl font-bold first:mt-0">
@@ -83,12 +106,10 @@ export function BlogContent({ content, slug }: BlogContentProps) {
           )
         }
 
-        // Horizontal rule
         if (block.trim() === "---") {
           return <hr key={index} className="my-8 border-border" />
         }
 
-        // Lists
         if (block.startsWith("- ")) {
           const items = block.split("\n").filter((line) => line.startsWith("- "))
           return (
@@ -102,7 +123,6 @@ export function BlogContent({ content, slug }: BlogContentProps) {
           )
         }
 
-        // Numbered lists
         if (/^\d+\.\s/.test(block)) {
           const items = block.split("\n").filter((line) => /^\d+\.\s/.test(line))
           return (
@@ -116,7 +136,6 @@ export function BlogContent({ content, slug }: BlogContentProps) {
           )
         }
 
-        // Tables
         if (block.includes("|") && block.includes("---")) {
           const lines = block.split("\n").filter((line) => line.trim())
           const headers = lines[0]?.split("|").filter((cell) => cell.trim()) || []
@@ -150,7 +169,6 @@ export function BlogContent({ content, slug }: BlogContentProps) {
           )
         }
 
-        // Regular paragraphs
         if (block.trim()) {
           return (
             <p key={index} className="my-4 text-muted-foreground leading-relaxed">
@@ -165,7 +183,6 @@ export function BlogContent({ content, slug }: BlogContentProps) {
   }
 
   const parseInlineStyles = (text: string) => {
-    // Handle bold
     const parts = text.split(/(\*\*[^*]+\*\*)/g)
     return parts.map((part, i) => {
       if (part.startsWith("**") && part.endsWith("**")) {
@@ -175,10 +192,13 @@ export function BlogContent({ content, slug }: BlogContentProps) {
           </strong>
         )
       }
-      // Handle italic
       const italicParts = part.split(/(\*[^*]+\*)/g)
       return italicParts.map((italicPart, j) => {
-        if (italicPart.startsWith("*") && italicPart.endsWith("*") && !italicPart.startsWith("**")) {
+        if (
+          italicPart.startsWith("*") &&
+          italicPart.endsWith("*") &&
+          !italicPart.startsWith("**")
+        ) {
           return <em key={`${i}-${j}`}>{italicPart.slice(1, -1)}</em>
         }
         return italicPart
@@ -186,9 +206,5 @@ export function BlogContent({ content, slug }: BlogContentProps) {
     })
   }
 
-  return (
-    <div className="prose prose-invert max-w-none">
-      {parseContent(content)}
-    </div>
-  )
+  return <div className="prose prose-invert max-w-none">{parseContent(content)}</div>
 }

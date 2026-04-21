@@ -2,13 +2,14 @@
 
 import { motion } from "framer-motion"
 import { useInView } from "framer-motion"
-import { useRef } from "react"
 import { ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { useSectionView } from "@/hooks/use-section-view"
+import { trackCta } from "@/lib/analytics"
 
 export function CTASection() {
-  const ref = useRef(null)
+  const ref = useSectionView<HTMLElement>("cta_section")
   const isInView = useInView(ref, { once: true, margin: "-100px" })
 
   return (
@@ -36,7 +37,15 @@ export function CTASection() {
             className="group w-full bg-primary text-primary-foreground hover:bg-primary/90 sm:w-auto"
             asChild
           >
-            <Link href="#demo">
+            <Link
+              href="#demo"
+              onClick={() =>
+                trackCta("check_my_route", "cta_section", {
+                  cta_text: "Check My Route",
+                  destination: "#demo",
+                })
+              }
+            >
               Check My Route
               <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
@@ -47,7 +56,17 @@ export function CTASection() {
             className="w-full border-primary/30 hover:bg-primary/10 sm:w-auto"
             asChild
           >
-            <Link href="#demo">Start Saving Time</Link>
+            <Link
+              href="#demo"
+              onClick={() =>
+                trackCta("start_saving_time", "cta_section", {
+                  cta_text: "Start Saving Time",
+                  destination: "#demo",
+                })
+              }
+            >
+              Start Saving Time
+            </Link>
           </Button>
         </div>
 

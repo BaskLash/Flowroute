@@ -1,8 +1,12 @@
 import { Metadata } from "next"
-import Link from "next/link"
 import { ArrowRight, ArrowLeft, Route } from "lucide-react"
 import { blogPosts } from "@/lib/blog-data"
 import { Button } from "@/components/ui/button"
+import { TrackedBlogCard } from "@/components/blog/tracked-blog-card"
+import {
+  TrackedLogo,
+  TrackedNavLink,
+} from "@/components/blog/tracked-blog-nav"
 
 export const metadata: Metadata = {
   title: "Blog | flowroute",
@@ -20,17 +24,24 @@ export default function BlogPage() {
       {/* Header */}
       <header className="border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-2">
+          <TrackedLogo href="/" className="flex items-center gap-2" placement="header">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
               <Route className="h-5 w-5 text-primary-foreground" />
             </div>
             <span className="text-xl font-semibold tracking-tight">flowroute</span>
-          </Link>
+          </TrackedLogo>
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/" className="flex items-center gap-2">
+            <TrackedNavLink
+              href="/"
+              link_id="back_to_home"
+              link_text="Back to Home"
+              is_anchor={false}
+              placement="header"
+              className="flex items-center gap-2"
+            >
               <ArrowLeft className="h-4 w-4" />
               Back to Home
-            </Link>
+            </TrackedNavLink>
           </Button>
         </nav>
       </header>
@@ -46,9 +57,11 @@ export default function BlogPage() {
         </div>
 
         <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          {blogPosts.map((post) => (
+          {blogPosts.map((post, index) => (
             <article key={post.slug}>
-              <Link
+              <TrackedBlogCard
+                slug={post.slug}
+                position={index}
                 href={`/blog/${post.slug}`}
                 className="group block h-full rounded-2xl border border-border/50 bg-card/50 p-6 backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-card/70"
               >
@@ -73,7 +86,7 @@ export default function BlogPage() {
                   Read article
                   <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </div>
-              </Link>
+              </TrackedBlogCard>
             </article>
           ))}
         </div>
@@ -83,12 +96,12 @@ export default function BlogPage() {
       <footer className="border-t border-border/50 bg-card/30">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <Link href="/" className="flex items-center gap-2">
+            <TrackedLogo href="/" className="flex items-center gap-2" placement="footer">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
                 <Route className="h-4 w-4 text-primary-foreground" />
               </div>
               <span className="font-semibold">flowroute</span>
-            </Link>
+            </TrackedLogo>
             <p className="text-sm text-muted-foreground">
               &copy; {new Date().getFullYear()} flowroute. All rights reserved.
             </p>

@@ -4,10 +4,17 @@ import { motion } from "framer-motion"
 import { ArrowRight, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { useSectionView } from "@/hooks/use-section-view"
+import { trackCta } from "@/lib/analytics"
 
 export function HeroSection() {
+  const ref = useSectionView<HTMLElement>("hero")
+
   return (
-    <section className="relative overflow-hidden px-4 pt-32 pb-20 sm:px-6 lg:px-8 lg:pt-40 lg:pb-32">
+    <section
+      ref={ref}
+      className="relative overflow-hidden px-4 pt-32 pb-20 sm:px-6 lg:px-8 lg:pt-40 lg:pb-32"
+    >
       {/* Background gradient */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-1/2 left-1/2 h-[800px] w-[800px] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
@@ -57,7 +64,15 @@ export function HeroSection() {
               className="group w-full bg-primary text-primary-foreground hover:bg-primary/90 sm:w-auto"
               asChild
             >
-              <Link href="#demo">
+              <Link
+                href="#demo"
+                onClick={() =>
+                  trackCta("check_my_route", "hero", {
+                    cta_text: "Check My Route",
+                    destination: "#demo",
+                  })
+                }
+              >
                 Check My Route
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Link>
@@ -68,7 +83,17 @@ export function HeroSection() {
               className="w-full sm:w-auto"
               asChild
             >
-              <Link href="#how-it-works">See When To Leave</Link>
+              <Link
+                href="#how-it-works"
+                onClick={() =>
+                  trackCta("see_when_to_leave", "hero", {
+                    cta_text: "See When To Leave",
+                    destination: "#how-it-works",
+                  })
+                }
+              >
+                See When To Leave
+              </Link>
             </Button>
           </motion.div>
         </div>

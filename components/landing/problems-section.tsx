@@ -2,11 +2,11 @@
 
 import { motion } from "framer-motion"
 import { useInView } from "framer-motion"
-import { useRef } from "react"
 import { Users, TrendingUp, Clock, Eye } from "lucide-react"
+import { useSectionView } from "@/hooks/use-section-view"
 
 export function ProblemsSection() {
-  const ref = useRef(null)
+  const ref = useSectionView<HTMLElement>("problems")
   const isInView = useInView(ref, { once: true, margin: "-100px" })
 
   const problems = [

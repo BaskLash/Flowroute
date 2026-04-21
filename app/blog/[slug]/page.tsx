@@ -1,10 +1,15 @@
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
-import Link from "next/link"
 import { ArrowLeft, Route, Clock, Calendar } from "lucide-react"
 import { getBlogPost, getAllBlogSlugs } from "@/lib/blog-data"
 import { Button } from "@/components/ui/button"
 import { ReadingProgress } from "@/components/blog/reading-progress"
+import { BlogArticleTracker } from "@/components/blog/blog-article-tracker"
+import { TrackedBlogCta } from "@/components/blog/tracked-blog-cta"
+import {
+  TrackedLogo,
+  TrackedNavLink,
+} from "@/components/blog/tracked-blog-nav"
 
 interface BlogPostPageProps {
   params: Promise<{ slug: string }>
@@ -132,21 +137,29 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
   return (
     <div className="min-h-screen">
       <ReadingProgress />
+      <BlogArticleTracker slug={post.slug} readTime={post.readTime} />
 
       {/* Header */}
       <header className="border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-2">
+          <TrackedLogo href="/" className="flex items-center gap-2" placement="header">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
               <Route className="h-5 w-5 text-primary-foreground" />
             </div>
             <span className="text-xl font-semibold tracking-tight">flowroute</span>
-          </Link>
+          </TrackedLogo>
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/blog" className="flex items-center gap-2">
+            <TrackedNavLink
+              href="/blog"
+              link_id="all_posts"
+              link_text="All Posts"
+              is_anchor={false}
+              placement="header"
+              className="flex items-center gap-2"
+            >
               <ArrowLeft className="h-4 w-4" />
               All Posts
-            </Link>
+            </TrackedNavLink>
           </Button>
         </nav>
       </header>
@@ -202,7 +215,13 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
             {"Stop wasting time in traffic. Start leaving at the right time."}
           </p>
           <Button className="mt-6 bg-primary text-primary-foreground hover:bg-primary/90" asChild>
-            <Link href="/#demo">Try flowroute Now</Link>
+            <TrackedBlogCta
+              href="/#demo"
+              slug={post.slug}
+              cta_id="check_my_route"
+            >
+              Try flowroute Now
+            </TrackedBlogCta>
           </Button>
         </div>
       </main>
@@ -211,12 +230,12 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
       <footer className="border-t border-border/50 bg-card/30">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <Link href="/" className="flex items-center gap-2">
+            <TrackedLogo href="/" className="flex items-center gap-2" placement="footer">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
                 <Route className="h-4 w-4 text-primary-foreground" />
               </div>
               <span className="font-semibold">flowroute</span>
-            </Link>
+            </TrackedLogo>
             <p className="text-sm text-muted-foreground">
               &copy; {new Date().getFullYear()} flowroute. All rights reserved.
             </p>

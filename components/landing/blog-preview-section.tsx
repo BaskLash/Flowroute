@@ -2,10 +2,14 @@
 
 import { motion } from "framer-motion"
 import { useInView } from "framer-motion"
-import { useRef } from "react"
 import { ArrowRight } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { useSectionView } from "@/hooks/use-section-view"
+import {
+  trackBlogAllPostsClick,
+  trackBlogPreviewClick,
+} from "@/lib/analytics"
 
 const blogPosts = [
   {
@@ -32,7 +36,7 @@ const blogPosts = [
 ]
 
 export function BlogPreviewSection() {
-  const ref = useRef(null)
+  const ref = useSectionView<HTMLElement>("blog_preview")
   const isInView = useInView(ref, { once: true, margin: "-100px" })
 
   return (
@@ -53,7 +57,10 @@ export function BlogPreviewSection() {
             </p>
           </div>
           <Button variant="outline" className="group shrink-0" asChild>
-            <Link href="/blog">
+            <Link
+              href="/blog"
+              onClick={() => trackBlogAllPostsClick("blog_card")}
+            >
               View all posts
               <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
@@ -70,6 +77,7 @@ export function BlogPreviewSection() {
             >
               <Link
                 href={`/blog/${post.slug}`}
+                onClick={() => trackBlogPreviewClick(post.slug, index)}
                 className="group block h-full rounded-2xl border border-border/50 bg-card/50 p-6 backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-card/70"
               >
                 <div className="text-sm text-muted-foreground">{post.readTime}</div>

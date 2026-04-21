@@ -2,10 +2,10 @@
 
 import { motion } from "framer-motion"
 import { useInView } from "framer-motion"
-import { useRef } from "react"
+import { useSectionView } from "@/hooks/use-section-view"
 
 export function ImpactSection() {
-  const ref = useRef(null)
+  const ref = useSectionView<HTMLElement>("impact")
   const isInView = useInView(ref, { once: true, margin: "-100px" })
 
   const lines = [

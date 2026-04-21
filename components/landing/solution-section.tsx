@@ -2,11 +2,11 @@
 
 import { motion } from "framer-motion"
 import { useInView } from "framer-motion"
-import { useRef } from "react"
 import { MapPin, Clock, Zap } from "lucide-react"
+import { useSectionView } from "@/hooks/use-section-view"
 
 export function SolutionSection() {
-  const ref = useRef(null)
+  const ref = useSectionView<HTMLElement>("solution")
   const isInView = useInView(ref, { once: true, margin: "-100px" })
 
   const steps = [
