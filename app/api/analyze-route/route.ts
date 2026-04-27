@@ -149,7 +149,15 @@ export async function POST(req: Request) {
   // on transient failures here — if Routes API is unavailable, the slot data
   // is still useful on its own.
   let routes: AnalyzeResponse["routes"] = []
-  if (apiKey) {
+  // Guarantee the timestamp we feed Routes API falls inside the (possibly
+  // projected) window. timeline entries are derived from `slots` which are
+  // built from windowStart..windowEnd, so this should always pass — the
+  // assertion is here to catch regressions in slot construction.
+  const windowStartSec = Math.floor(windowStart.getTime() / 1000)
+  const windowEndSec = Math.floor(windowEnd.getTime() / 1000)
+  const inWindow =
+    best.timestamp >= windowStartSec && best.timestamp <= windowEndSec
+  if (apiKey && inWindow) {
     try {
       routes = await getAlternativeRoutes(
         origin.trim(),

@@ -20,8 +20,10 @@ export type TimelineEntry = {
 }
 
 export type RouteAlternative = {
-  /** Index in the response, 0 = primary (typically the fastest). */
+  /** Position in the response from Google. Stable but not meaningful for ranking. */
   index: number
+  /** Rank by duration: 1 = fastest, 2 = second, 3 = third. */
+  rank: 1 | 2 | 3
   /** Travel time in minutes (already accounts for traffic). */
   duration: number
   /** Distance in meters. */
@@ -37,6 +39,8 @@ export type RouteAlternative = {
   /** Minutes saved vs the slowest alternative; 0 when there's no spread. */
   saves_minutes_vs_slowest: number
 }
+
+const MAX_ROUTE_ALTERNATIVES = 3
 
 export type AnalyzeResponse = {
   current_duration: number
@@ -297,6 +301,7 @@ export async function getAlternativeRoutes(
     if (Number.isNaN(seconds) || !polyline) return
     parsed.push({
       index: idx,
+      rank: 1,
       duration: Math.round(seconds / 60),
       distance_meters: r.distanceMeters ?? 0,
       description: r.description ?? "",
@@ -309,14 +314,19 @@ export async function getAlternativeRoutes(
 
   if (parsed.length === 0) return []
 
-  const minDuration = parsed.reduce((m, r) => Math.min(m, r.duration), Infinity)
-  const maxDuration = parsed.reduce((m, r) => Math.max(m, r.duration), -Infinity)
-  for (const r of parsed) {
-    r.is_fastest = r.duration === minDuration
-    r.saves_minutes_vs_slowest = Math.max(0, maxDuration - r.duration)
-  }
+  // Sort by duration ascending so rank reflects actual travel time, then cap
+  // to top 3 — even though Google rarely returns more, we enforce it anyway
+  // so the response shape is predictable.
+  parsed.sort((a, b) => a.duration - b.duration)
+  const top = parsed.slice(0, MAX_ROUTE_ALTERNATIVES)
+  const slowestDuration = top.reduce((m, r) => Math.max(m, r.duration), -Infinity)
+  top.forEach((r, i) => {
+    r.rank = ((i + 1) as 1 | 2 | 3)
+    r.is_fastest = i === 0
+    r.saves_minutes_vs_slowest = Math.max(0, slowestDuration - r.duration)
+  })
 
-  return parsed
+  return top
 }
 
 export async function resolveSlots(params: {

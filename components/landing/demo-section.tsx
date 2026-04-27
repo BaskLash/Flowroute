@@ -12,6 +12,7 @@ import {
   Clock,
   Loader2,
   MapPin,
+  Medal,
   Navigation,
   Trophy,
 } from "lucide-react"
@@ -39,6 +40,7 @@ type TimelineEntry = {
 
 type RouteAlternative = {
   index: number
+  rank: 1 | 2 | 3
   duration: number
   distance_meters: number
   description: string
@@ -46,6 +48,33 @@ type RouteAlternative = {
   labels: string[]
   is_fastest: boolean
   saves_minutes_vs_slowest: number
+}
+
+const RANK_STYLE: Record<
+  1 | 2 | 3,
+  { color: string; label: string; cardClass: string; pillClass: string; durationClass: string }
+> = {
+  1: {
+    color: "#10b981",
+    label: "1st · Fastest",
+    cardClass: "border-2 border-emerald-500/70 bg-emerald-500/10",
+    pillClass: "bg-emerald-500 text-white",
+    durationClass: "text-emerald-600 dark:text-emerald-400",
+  },
+  2: {
+    color: "#f59e0b",
+    label: "2nd · Runner-up",
+    cardClass: "border border-amber-500/50 bg-amber-500/5",
+    pillClass: "bg-amber-500 text-white",
+    durationClass: "text-amber-600 dark:text-amber-400",
+  },
+  3: {
+    color: "#64748b",
+    label: "3rd · Alternative",
+    cardClass: "border border-slate-400/50 bg-slate-500/5",
+    pillClass: "bg-slate-500 text-white",
+    durationClass: "text-slate-600 dark:text-slate-300",
+  },
 }
 
 type AnalyzeResponse = {
@@ -406,56 +435,78 @@ export function DemoSection() {
                   <div className="mt-6">
                     <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
                       <Navigation className="h-4 w-4 text-primary" />
-                      Route options at {result.best_departure_time}
+                      Route options at {result.best_departure_time} · within{" "}
+                      {result.window_start}–{result.window_end}
                     </div>
-                    <RouteMap routes={result.routes} />
-                    <div className="mt-3 space-y-2">
+                    <p className="mb-4 text-xs text-muted-foreground">
+                      Ranked by travel time at the best departure slot. The
+                      fastest route is highlighted in green.
+                    </p>
+                    <div className="space-y-3">
                       {result.routes.map((route) => {
-                        const roadType = classifyRoadType(route.description, route.labels)
+                        const style = RANK_STYLE[route.rank]
+                        const roadType = classifyRoadType(
+                          route.description,
+                          route.labels,
+                        )
+                        const RankIcon = route.rank === 1 ? Trophy : Medal
                         return (
                           <div
                             key={route.index}
-                            className={`rounded-xl p-4 transition-colors ${
-                              route.is_fastest
-                                ? "border-2 border-primary bg-primary/10"
-                                : "border border-border/50 bg-secondary/30"
-                            }`}
+                            className={`overflow-hidden rounded-xl ${style.cardClass}`}
+                            aria-label={`${style.label}: ${
+                              route.description || `Route ${route.index + 1}`
+                            }, ${formatDuration(route.duration)}`}
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  {route.is_fastest && (
-                                    <Trophy className="h-4 w-4 flex-shrink-0 text-primary" />
-                                  )}
-                                  <span className="truncate font-medium">
-                                    {route.description || `Route ${route.index + 1}`}
-                                  </span>
-                                </div>
-                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                                  <span>{roadType}</span>
-                                  <span>{formatKm(route.distance_meters)}</span>
-                                  {route.is_fastest && (
-                                    <span className="font-semibold text-primary">
-                                      Fastest option
-                                    </span>
-                                  )}
+                            <div className="flex items-center justify-between gap-3 p-4">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${style.pillClass}`}
+                                >
+                                  <RankIcon className="h-3.5 w-3.5" />
+                                  {style.label}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="truncate font-medium">
+                                    {route.description ||
+                                      `Route ${route.index + 1}`}
+                                  </div>
+                                  <div className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-muted-foreground">
+                                    <span>{roadType}</span>
+                                    <span>{formatKm(route.distance_meters)}</span>
+                                  </div>
                                 </div>
                               </div>
                               <div className="text-right">
                                 <div
-                                  className={`text-xl font-bold ${
-                                    route.is_fastest ? "text-primary" : ""
-                                  }`}
+                                  className={`text-xl font-bold ${style.durationClass}`}
                                 >
                                   {formatDuration(route.duration)}
                                 </div>
-                                {route.is_fastest && route.saves_minutes_vs_slowest > 0 && (
-                                  <div className="text-xs font-medium text-primary">
-                                    Save {route.saves_minutes_vs_slowest} min vs slowest
-                                  </div>
-                                )}
+                                {route.rank === 1 &&
+                                  route.saves_minutes_vs_slowest > 0 && (
+                                    <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                                      Save {route.saves_minutes_vs_slowest} min
+                                      vs 3rd
+                                    </div>
+                                  )}
+                                {route.rank > 1 &&
+                                  route.duration > result.routes[0].duration && (
+                                    <div className="text-xs text-muted-foreground">
+                                      +{route.duration - result.routes[0].duration} min
+                                      vs 1st
+                                    </div>
+                                  )}
                               </div>
                             </div>
+                            <RouteMap
+                              route={route}
+                              color={style.color}
+                              heightClassName={
+                                route.rank === 1 ? "h-64" : "h-48"
+                              }
+                              className="px-1 pb-1"
+                            />
                           </div>
                         )
                       })}
