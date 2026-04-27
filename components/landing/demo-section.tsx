@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import { motion } from "framer-motion"
 import { useInView } from "framer-motion"
@@ -10,6 +10,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock,
+  ExternalLink,
   Loader2,
   MapPin,
   Medal,
@@ -20,7 +21,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AddressAutocomplete } from "@/components/traffic/address-autocomplete"
 import { useSectionView } from "@/hooks/use-section-view"
+import { buildGoogleMapsUrl } from "@/lib/google-maps-link"
 import {
+  trackAnalyzeComplete,
+  trackAnalyzeError,
   trackCta,
   trackDemoFieldChange,
   trackDemoFieldFocus,
@@ -28,8 +32,11 @@ import {
   trackDemoResultsView,
   trackDemoRetry,
   trackDemoSubmit,
+  trackRouteCardImpression,
+  trackRouteOpenInMaps,
   type DemoField,
   type DemoResultStatus,
+  type RoadType,
 } from "@/lib/analytics"
 
 type TimelineEntry = {
@@ -106,12 +113,33 @@ function formatKm(meters: number): string {
   return `${meters} m`
 }
 
-function classifyRoadType(description: string, labels: string[]): string {
+function classifyRoadType(description: string, labels: string[]): RoadType {
   const d = description.toLowerCase()
   if (labels.includes("FUEL_EFFICIENT")) return "Fuel-efficient"
   if (/\b(a\d+|autobahn|motorway|highway|interstate|i-\d+)\b/.test(d)) return "Highway"
   if (/\b(b\d+|country|landstr|backroad|scenic)\b/.test(d)) return "Country road"
   return "Alternate route"
+}
+
+function deviceSurface(): "mobile" | "tablet" | "desktop" {
+  if (typeof window === "undefined") return "desktop"
+  if (window.innerWidth < 640) return "mobile"
+  if (window.innerWidth < 1024) return "tablet"
+  return "desktop"
+}
+
+function parseHHMM(value: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
+  if (!m) return null
+  return Number(m[1]) * 60 + Number(m[2])
+}
+
+function windowMinutes(start: string, end: string, slotCount: number): number {
+  const a = parseHHMM(start)
+  const b = parseHHMM(end)
+  if (a == null || b == null) return Math.max(0, (slotCount - 1) * 10)
+  const raw = b - a
+  return raw <= 0 ? raw + 24 * 60 : raw
 }
 
 type DisplayResult = {
@@ -164,11 +192,8 @@ export function DemoSection() {
 
   const firstFocusAt = useRef<number | null>(null)
   const submitAttempts = useRef(0)
-  const fieldHasValueAtBlur = useRef<Record<DemoField, number>>({
-    origin: 0,
-    destination: 0,
-    time_window: 0,
-  })
+  const submitStartedAt = useRef<number>(0)
+  const lastReportedRoutesKey = useRef<string>("")
 
   const displayResults = useMemo(
     () => (result ? classifyTimeline(result) : []),
@@ -182,9 +207,25 @@ export function DemoSection() {
 
   const onFieldBlurValue = (field: DemoField, value: string) => {
     const trimmed = value.trim()
-    fieldHasValueAtBlur.current[field] = trimmed.length
     trackDemoFieldChange(field, trimmed.length > 0, trimmed.length)
   }
+
+  // Fire one route_card_impression per route in a result set, deduped by a
+  // key combining the encoded polylines so re-renders don't spam events.
+  useEffect(() => {
+    if (!result || result.routes.length === 0) return
+    const key = result.routes.map((r) => r.encoded_polyline.slice(0, 16)).join("|")
+    if (key === lastReportedRoutesKey.current) return
+    lastReportedRoutesKey.current = key
+    for (const route of result.routes) {
+      trackRouteCardImpression({
+        rank: route.rank,
+        road_type: classifyRoadType(route.description, route.labels),
+        duration_min: route.duration,
+        is_fastest: route.is_fastest,
+      })
+    }
+  }, [result])
 
   const handleSubmit = async () => {
     submitAttempts.current += 1
@@ -222,7 +263,9 @@ export function DemoSection() {
     setLoading(true)
     setResult(null)
     resultsReported.current = false
+    submitStartedAt.current = performance.now()
 
+    let httpStatus = 0
     try {
       const resp = await fetch("/api/analyze-route", {
         method: "POST",
@@ -234,6 +277,7 @@ export function DemoSection() {
           end_time: endTime || undefined,
         }),
       })
+      httpStatus = resp.status
 
       const data = (await resp.json().catch(() => ({}))) as
         | AnalyzeResponse
@@ -246,6 +290,7 @@ export function DemoSection() {
       }
 
       const analyzed = data as AnalyzeResponse
+      const latency = Math.round(performance.now() - submitStartedAt.current)
       setResult(analyzed)
 
       if (!resultsReported.current) {
@@ -254,11 +299,34 @@ export function DemoSection() {
           result_count: analyzed.timeline.length,
           has_optimal: analyzed.time_saved > 0,
         })
+        trackAnalyzeComplete({
+          window_minutes: windowMinutes(
+            analyzed.window_start,
+            analyzed.window_end,
+            analyzed.timeline.length,
+          ),
+          slot_count: analyzed.timeline.length,
+          best_duration_min: analyzed.best_duration,
+          worst_duration_min: analyzed.worst_duration,
+          time_saved_min: analyzed.time_saved,
+          route_count: analyzed.routes.length,
+          has_routes: analyzed.routes.length > 0,
+          projected_to_next_week: analyzed.projected_to_next_week,
+          demo_mode: analyzed.demo_mode,
+          latency_ms: latency,
+        })
       }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Something went wrong. Try again."
       setError(message)
+      trackAnalyzeError({
+        status: httpStatus,
+        detail: message.slice(0, 200),
+        origin_present: o.length > 0,
+        destination_present: d.length > 0,
+        latency_ms: Math.round(performance.now() - submitStartedAt.current),
+      })
     } finally {
       setLoading(false)
     }
@@ -299,6 +367,7 @@ export function DemoSection() {
               <AddressAutocomplete
                 value={origin}
                 onValueChange={setOrigin}
+                field="origin"
                 placeholder="From: address, city, postal code"
                 ariaLabel="Origin"
                 inputClassName="h-12 bg-secondary/50 pl-10"
@@ -312,6 +381,7 @@ export function DemoSection() {
               <AddressAutocomplete
                 value={destination}
                 onValueChange={setDestination}
+                field="destination"
                 placeholder="To: address, city, postal code"
                 ariaLabel="Destination"
                 inputClassName="h-12 bg-secondary/50 pl-10"
@@ -330,9 +400,9 @@ export function DemoSection() {
                     type="time"
                     aria-label="Earliest departure"
                     className="h-12 bg-secondary/50 pl-10"
-                    onFocus={() => onFieldFocus("time_window")}
+                    onFocus={() => onFieldFocus("start_time")}
                     onBlur={(e) =>
-                      onFieldBlurValue("time_window", e.currentTarget.value)
+                      onFieldBlurValue("start_time", e.currentTarget.value)
                     }
                   />
                 </div>
@@ -343,9 +413,9 @@ export function DemoSection() {
                     type="time"
                     aria-label="Latest departure"
                     className="h-12 bg-secondary/50 pl-10"
-                    onFocus={() => onFieldFocus("time_window")}
+                    onFocus={() => onFieldFocus("end_time")}
                     onBlur={(e) =>
-                      onFieldBlurValue("time_window", e.currentTarget.value)
+                      onFieldBlurValue("end_time", e.currentTarget.value)
                     }
                   />
                 </div>
@@ -433,10 +503,12 @@ export function DemoSection() {
 
                 {result.routes.length > 0 && (
                   <div className="mt-6">
-                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                      <Navigation className="h-4 w-4 text-primary" />
-                      Route options at {result.best_departure_time} · within{" "}
-                      {result.window_start}–{result.window_end}
+                    <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold">
+                      <Navigation className="h-4 w-4 flex-shrink-0 text-primary" />
+                      <span>Route options at {result.best_departure_time}</span>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        within {result.window_start}–{result.window_end}
+                      </span>
                     </div>
                     <p className="mb-4 text-xs text-muted-foreground">
                       Ranked by travel time at the best departure slot. The
@@ -450,6 +522,20 @@ export function DemoSection() {
                           route.labels,
                         )
                         const RankIcon = route.rank === 1 ? Trophy : Medal
+                        const mapsUrl = buildGoogleMapsUrl({
+                          origin,
+                          destination,
+                          encodedPolyline: route.encoded_polyline,
+                          isPrimary: route.is_fastest,
+                        })
+                        const onOpenMaps = () =>
+                          trackRouteOpenInMaps({
+                            rank: route.rank,
+                            road_type: roadType,
+                            duration_min: route.duration,
+                            is_fastest: route.is_fastest,
+                            surface: deviceSurface(),
+                          })
                         return (
                           <div
                             key={route.index}
@@ -458,55 +544,71 @@ export function DemoSection() {
                               route.description || `Route ${route.index + 1}`
                             }, ${formatDuration(route.duration)}`}
                           >
-                            <div className="flex items-center justify-between gap-3 p-4">
-                              <div className="flex min-w-0 items-center gap-3">
+                            <div className="space-y-2 p-4">
+                              {/* Top row: rank pill + duration. On mobile both
+                                  sit on one line; on the smallest screens the
+                                  pill text stays readable because it's short. */}
+                              <div className="flex items-start justify-between gap-3">
                                 <span
-                                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${style.pillClass}`}
+                                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${style.pillClass}`}
                                 >
                                   <RankIcon className="h-3.5 w-3.5" />
                                   {style.label}
                                 </span>
-                                <div className="min-w-0">
-                                  <div className="truncate font-medium">
-                                    {route.description ||
-                                      `Route ${route.index + 1}`}
+                                <div className="text-right">
+                                  <div
+                                    className={`text-xl font-bold leading-tight sm:text-2xl ${style.durationClass}`}
+                                  >
+                                    {formatDuration(route.duration)}
                                   </div>
-                                  <div className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-muted-foreground">
-                                    <span>{roadType}</span>
-                                    <span>{formatKm(route.distance_meters)}</span>
-                                  </div>
+                                  {route.rank === 1 &&
+                                    route.saves_minutes_vs_slowest > 0 && (
+                                      <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                                        Save {route.saves_minutes_vs_slowest} min vs 3rd
+                                      </div>
+                                    )}
+                                  {route.rank > 1 &&
+                                    route.duration > result.routes[0].duration && (
+                                      <div className="text-xs text-muted-foreground">
+                                        +{route.duration - result.routes[0].duration} min vs 1st
+                                      </div>
+                                    )}
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <div
-                                  className={`text-xl font-bold ${style.durationClass}`}
-                                >
-                                  {formatDuration(route.duration)}
+                              {/* Second row: description + meta facts wrap freely. */}
+                              <div>
+                                <div className="font-medium break-words">
+                                  {route.description || `Route ${route.index + 1}`}
                                 </div>
-                                {route.rank === 1 &&
-                                  route.saves_minutes_vs_slowest > 0 && (
-                                    <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                                      Save {route.saves_minutes_vs_slowest} min
-                                      vs 3rd
-                                    </div>
-                                  )}
-                                {route.rank > 1 &&
-                                  route.duration > result.routes[0].duration && (
-                                    <div className="text-xs text-muted-foreground">
-                                      +{route.duration - result.routes[0].duration} min
-                                      vs 1st
-                                    </div>
-                                  )}
+                                <div className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-muted-foreground">
+                                  <span>{roadType}</span>
+                                  <span>{formatKm(route.distance_meters)}</span>
+                                </div>
                               </div>
                             </div>
                             <RouteMap
                               route={route}
                               color={style.color}
                               heightClassName={
-                                route.rank === 1 ? "h-64" : "h-48"
+                                route.rank === 1 ? "h-56 sm:h-64" : "h-44 sm:h-48"
                               }
-                              className="px-1 pb-1"
+                              className="px-1"
                             />
+                            <div className="p-3 pt-3">
+                              <a
+                                href={mapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={onOpenMaps}
+                                className="flex w-full items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                aria-label={`Open ${
+                                  route.description || `route ${route.index + 1}`
+                                } in Google Maps`}
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                                Open in Google Maps
+                              </a>
+                            </div>
                           </div>
                         )
                       })}

@@ -1,6 +1,7 @@
 "use client"
 
 import { sendGAEvent } from "@next/third-parties/google"
+import { track as vercelTrack } from "@vercel/analytics"
 
 /* -----------------------------------------------------------------
  * GA4 Admin setup — REQUIRED (one-time, outside of code)
@@ -70,9 +71,21 @@ export type FutureFeatureId =
 
 export type NavPlacement = "header" | "footer" | "mobile_menu"
 
-export type DemoField = "origin" | "destination" | "time_window"
+export type DemoField =
+  | "origin"
+  | "destination"
+  | "time_window"
+  | "start_time"
+  | "end_time"
 
 export type DemoResultStatus = "peak" | "moderate" | "optimal"
+
+export type RouteRank = 1 | 2 | 3
+export type RoadType =
+  | "Highway"
+  | "Country road"
+  | "Fuel-efficient"
+  | "Alternate route"
 
 export type DeviceType = "mobile" | "tablet" | "desktop"
 
@@ -179,14 +192,53 @@ export function getViewedSections(): SectionId[] {
 /* -------------------- Core wrapper -------------------- */
 
 /**
- * Single entrypoint for every GA event emitted by the app.
+ * Vercel Analytics requires param values to be string | number | boolean | null.
+ * Coerce anything else (objects, undefined) to keep payloads valid without
+ * dropping the call.
+ */
+type VercelTrackValue = string | number | boolean | null
+function toVercelProps(
+  params: Record<string, unknown>,
+): Record<string, VercelTrackValue> {
+  const out: Record<string, VercelTrackValue> = {}
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined) continue
+    if (
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      out[key] = value
+    } else {
+      out[key] = String(value)
+    }
+  }
+  return out
+}
+
+/**
+ * Single entrypoint for every analytics event emitted by the app.
+ * Dual-emits to:
+ *   1. Google Analytics 4 (sendGAEvent → gtag) — gated by analytics consent.
+ *   2. Vercel Analytics — runs in production only (the Vercel <Analytics />
+ *      component is also gated to NODE_ENV === 'production' in layout.tsx).
+ *      Vercel collects no PII and does not need cookie consent under
+ *      privacy law in most jurisdictions, but we still gate it on the same
+ *      consent flag for consistency with GA.
  * Auto-appends: ts_client, viewport_w, viewport_h, device_type, page_path.
- * Gated by analytics consent — no events fire before user opts in.
  */
 export function track(event: string, params: Record<string, unknown> = {}) {
   if (typeof window === "undefined") return
   if (!hasAnalyticsConsent()) return
-  sendGAEvent("event", event, { ...baseParams(), ...params })
+  const enriched = { ...baseParams(), ...params }
+  sendGAEvent("event", event, enriched)
+  // Vercel's track() throws in dev if the script isn't loaded, so guard.
+  try {
+    vercelTrack(event, toVercelProps(enriched))
+  } catch {
+    /* analytics is not loaded yet (dev or pre-mount) — drop silently */
+  }
 }
 
 /* -------------------- CTA -------------------- */
@@ -329,4 +381,94 @@ export function trackPageExit(p: {
   sections_viewed: string
 }) {
   track("page_exit", p)
+}
+
+/* -------------------- Traffic analyzer outcome events -------------------- */
+
+/**
+ * Emitted exactly once per successful /api/analyze-route response.
+ * Captures the shape of the answer so we can see — after a week — which
+ * window sizes produce useful results, how often we fall back to demo mode,
+ * how often the user requests a past window, and the typical savings spread.
+ */
+export function trackAnalyzeComplete(p: {
+  /** Length of the requested window in minutes. */
+  window_minutes: number
+  slot_count: number
+  best_duration_min: number
+  worst_duration_min: number
+  /** worst − best, in minutes. The headline "save X min" number. */
+  time_saved_min: number
+  route_count: number
+  has_routes: boolean
+  /** True when the requested window had already passed and we projected +7d. */
+  projected_to_next_week: boolean
+  /** True when no API key was configured and synthetic durations were returned. */
+  demo_mode: boolean
+  /** Total round-trip latency from submit to render, in ms. */
+  latency_ms: number
+}) {
+  track("analyze_complete", p)
+}
+
+/** Emitted when /api/analyze-route returns a non-2xx OR the fetch itself throws. */
+export function trackAnalyzeError(p: {
+  status: number
+  /** Truncated error detail; safe to send to analytics. */
+  detail: string
+  /** Whether the user had filled in both origin and destination. */
+  origin_present: boolean
+  destination_present: boolean
+  latency_ms: number
+}) {
+  track("analyze_error", p)
+}
+
+/* -------------------- Route-comparison events -------------------- */
+
+/** Fires once when a route card scrolls into view (impression). */
+export function trackRouteCardImpression(p: {
+  rank: RouteRank
+  road_type: RoadType
+  duration_min: number
+  is_fastest: boolean
+}) {
+  track("route_card_impression", p)
+}
+
+/** Fires when the user clicks "Open in Google Maps" on a route card. */
+export function trackRouteOpenInMaps(p: {
+  rank: RouteRank
+  road_type: RoadType
+  duration_min: number
+  is_fastest: boolean
+  /** "mobile" | "tablet" | "desktop" — already in baseParams, but
+   *  duplicating here makes the per-event row self-contained for easy
+   *  filtering in GA4 explorations and Vercel dashboards. */
+  surface: DeviceType
+}) {
+  track("route_open_in_maps", p)
+}
+
+/* -------------------- Address autocomplete events -------------------- */
+
+/** Fires when the autocomplete actually issues a network request to Photon. */
+export function trackAddressSearch(p: {
+  field: "origin" | "destination"
+  query_length: number
+}) {
+  track("address_search", p)
+}
+
+/** Fires when the user picks a suggestion (mouse OR keyboard). */
+export function trackAddressSuggestionPick(p: {
+  field: "origin" | "destination"
+  /** 0-based position in the dropdown. */
+  position: number
+  /** Method used to commit: "click" or "keyboard". */
+  method: "click" | "keyboard"
+  /** Length of the picked suggestion text. Useful proxy for address specificity. */
+  result_length: number
+}) {
+  track("address_suggestion_pick", p)
 }

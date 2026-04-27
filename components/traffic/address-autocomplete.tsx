@@ -5,6 +5,10 @@ import { Loader2 } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import {
+  trackAddressSearch,
+  trackAddressSuggestionPick,
+} from "@/lib/analytics"
 
 const PHOTON_URL = "https://photon.komoot.io/api/"
 const DEBOUNCE_MS = 250
@@ -69,6 +73,8 @@ function formatSuggestion(feat: PhotonFeature): Suggestion | null {
 export type AddressAutocompleteProps = {
   value: string
   onValueChange: (value: string) => void
+  /** Identifies this input in analytics events. */
+  field: "origin" | "destination"
   placeholder?: string
   className?: string
   inputClassName?: string
@@ -85,6 +91,7 @@ export type AddressAutocompleteProps = {
 export function AddressAutocomplete({
   value,
   onValueChange,
+  field,
   placeholder,
   className,
   inputClassName,
@@ -129,6 +136,7 @@ export function AddressAutocomplete({
       const controller = new AbortController()
       abortRef.current = controller
       setLoading(true)
+      trackAddressSearch({ field, query_length: query.length })
 
       const params = new URLSearchParams({
         q: query,
@@ -163,7 +171,7 @@ export function AddressAutocomplete({
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
     }
-  }, [value, bias, lang])
+  }, [value, bias, lang, field])
 
   React.useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -174,11 +182,18 @@ export function AddressAutocomplete({
     return () => document.removeEventListener("mousedown", onDocClick)
   }, [])
 
-  const pick = (s: Suggestion) => {
+  const pick = (s: Suggestion, method: "click" | "keyboard") => {
     skipNextLookup.current = true
+    const position = suggestions.findIndex((x) => x.id === s.id)
     onValueChange(s.label)
     setOpen(false)
     setActiveIndex(-1)
+    trackAddressSuggestionPick({
+      field,
+      position: position >= 0 ? position : 0,
+      method,
+      result_length: s.label.length,
+    })
   }
 
   const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
@@ -198,7 +213,7 @@ export function AddressAutocomplete({
       setActiveIndex((i) => (i <= 0 ? suggestions.length - 1 : i - 1))
     } else if (e.key === "Enter" && activeIndex >= 0) {
       e.preventDefault()
-      pick(suggestions[activeIndex])
+      pick(suggestions[activeIndex], "keyboard")
     } else if (e.key === "Escape") {
       setOpen(false)
     }
@@ -242,7 +257,7 @@ export function AddressAutocomplete({
               aria-selected={idx === activeIndex}
               onMouseDown={(e) => {
                 e.preventDefault()
-                pick(s)
+                pick(s, "click")
               }}
               onMouseEnter={() => setActiveIndex(idx)}
               className={cn(
