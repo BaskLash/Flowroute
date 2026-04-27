@@ -6,6 +6,7 @@ import {
   DEFAULT_WINDOW_HOURS,
   ensureFutureWindow,
   formatHHMM,
+  getAlternativeRoutes,
   parseTimeInput,
   resolveSlots,
   TrafficError,
@@ -144,6 +145,23 @@ export async function POST(req: Request) {
   )
   const timeSaved = Math.max(0, worst.duration - best.duration)
 
+  // Fetch alternative routes for the best slot. We do not block the response
+  // on transient failures here — if Routes API is unavailable, the slot data
+  // is still useful on its own.
+  let routes: AnalyzeResponse["routes"] = []
+  if (apiKey) {
+    try {
+      routes = await getAlternativeRoutes(
+        origin.trim(),
+        destination.trim(),
+        best.timestamp,
+        apiKey,
+      )
+    } catch {
+      routes = []
+    }
+  }
+
   const payload: AnalyzeResponse = {
     current_duration: current.duration,
     best_duration: best.duration,
@@ -156,6 +174,7 @@ export async function POST(req: Request) {
     window_end: formatHHMM(windowEnd),
     projected_to_next_week: projected,
     demo_mode: resolved.demoMode,
+    routes,
   }
 
   return NextResponse.json(payload)

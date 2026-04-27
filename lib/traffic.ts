@@ -3,6 +3,8 @@ export const DEFAULT_WINDOW_HOURS = 2
 
 const COMPUTE_ROUTE_MATRIX_URL =
   "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
+const COMPUTE_ROUTES_URL =
+  "https://routes.googleapis.com/directions/v2:computeRoutes"
 
 export type AnalyzeRequest = {
   origin: string
@@ -15,6 +17,25 @@ export type TimelineEntry = {
   time: string
   timestamp: number
   duration: number
+}
+
+export type RouteAlternative = {
+  /** Index in the response, 0 = primary (typically the fastest). */
+  index: number
+  /** Travel time in minutes (already accounts for traffic). */
+  duration: number
+  /** Distance in meters. */
+  distance_meters: number
+  /** Google's short summary, e.g. "via A1" or "via Seestrasse". */
+  description: string
+  /** Encoded polyline (Google's algorithm). Decode client-side for the map. */
+  encoded_polyline: string
+  /** Tags from Google: includes "DEFAULT_ROUTE", "FUEL_EFFICIENT", "SHORTER_DISTANCE". */
+  labels: string[]
+  /** True if this is the fastest of the returned alternatives. */
+  is_fastest: boolean
+  /** Minutes saved vs the slowest alternative; 0 when there's no spread. */
+  saves_minutes_vs_slowest: number
 }
 
 export type AnalyzeResponse = {
@@ -33,6 +54,9 @@ export type AnalyzeResponse = {
    *  could be retrieved. */
   projected_to_next_week: boolean
   demo_mode: boolean
+  /** Alternative routes computed for the best departure slot. Empty when the
+   *  Routes API call failed or in demo mode. */
+  routes: RouteAlternative[]
 }
 
 export class TrafficError extends Error {
@@ -202,6 +226,97 @@ export async function getDurationsMatrix(
   } finally {
     clearTimeout(timeout)
   }
+}
+
+/**
+ * Fetch alternative routes (typically up to 3) for a single departure timestamp.
+ * Hits Routes API directions:computeRoutes with computeAlternativeRoutes=true.
+ * Same TRAFFIC_AWARE_OPTIMAL preference as the matrix calls so durations are
+ * directly comparable.
+ */
+export async function getAlternativeRoutes(
+  origin: string,
+  destination: string,
+  departureTs: number,
+  apiKey: string,
+): Promise<RouteAlternative[]> {
+  const nowSec = Math.floor(Date.now() / 1000)
+  const safeTs = departureTs <= nowSec ? nowSec + 60 : departureTs
+  const departureRfc3339 = new Date(safeTs * 1000)
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "Z")
+
+  const payload = {
+    origin: { address: origin },
+    destination: { address: destination },
+    travelMode: "DRIVE",
+    routingPreference: "TRAFFIC_AWARE_OPTIMAL",
+    departureTime: departureRfc3339,
+    computeAlternativeRoutes: true,
+    polylineEncoding: "ENCODED_POLYLINE",
+    routeModifiers: { avoidFerries: false, avoidTolls: false, avoidHighways: false },
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 12_000)
+  let resp: Response
+  try {
+    resp = await fetch(COMPUTE_ROUTES_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask":
+          "routes.duration,routes.distanceMeters,routes.description,routes.routeLabels,routes.polyline.encodedPolyline",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+
+  if (!resp.ok) return []
+
+  const data = (await resp.json().catch(() => null)) as {
+    routes?: Array<{
+      duration?: string
+      distanceMeters?: number
+      description?: string
+      routeLabels?: string[]
+      polyline?: { encodedPolyline?: string }
+    }>
+  } | null
+
+  if (!data?.routes || data.routes.length === 0) return []
+
+  const parsed: RouteAlternative[] = []
+  data.routes.forEach((r, idx) => {
+    const seconds = r.duration ? Number.parseInt(r.duration.replace(/s$/, ""), 10) : NaN
+    const polyline = r.polyline?.encodedPolyline
+    if (Number.isNaN(seconds) || !polyline) return
+    parsed.push({
+      index: idx,
+      duration: Math.round(seconds / 60),
+      distance_meters: r.distanceMeters ?? 0,
+      description: r.description ?? "",
+      encoded_polyline: polyline,
+      labels: r.routeLabels ?? [],
+      is_fastest: false,
+      saves_minutes_vs_slowest: 0,
+    })
+  })
+
+  if (parsed.length === 0) return []
+
+  const minDuration = parsed.reduce((m, r) => Math.min(m, r.duration), Infinity)
+  const maxDuration = parsed.reduce((m, r) => Math.max(m, r.duration), -Infinity)
+  for (const r of parsed) {
+    r.is_fastest = r.duration === minDuration
+    r.saves_minutes_vs_slowest = Math.max(0, maxDuration - r.duration)
+  }
+
+  return parsed
 }
 
 export async function resolveSlots(params: {

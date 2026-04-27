@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useRef, useState } from "react"
+import dynamic from "next/dynamic"
 import { motion } from "framer-motion"
 import { useInView } from "framer-motion"
 import {
@@ -11,6 +12,8 @@ import {
   Clock,
   Loader2,
   MapPin,
+  Navigation,
+  Trophy,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,6 +37,17 @@ type TimelineEntry = {
   duration: number
 }
 
+type RouteAlternative = {
+  index: number
+  duration: number
+  distance_meters: number
+  description: string
+  encoded_polyline: string
+  labels: string[]
+  is_fastest: boolean
+  saves_minutes_vs_slowest: number
+}
+
 type AnalyzeResponse = {
   current_duration: number
   best_duration: number
@@ -46,6 +60,29 @@ type AnalyzeResponse = {
   window_end: string
   projected_to_next_week: boolean
   demo_mode: boolean
+  routes: RouteAlternative[]
+}
+
+const RouteMap = dynamic(() => import("@/components/traffic/route-map"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-72 w-full items-center justify-center rounded-xl border border-border/60 bg-secondary/30 text-sm text-muted-foreground">
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading map…
+    </div>
+  ),
+})
+
+function formatKm(meters: number): string {
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`
+  return `${meters} m`
+}
+
+function classifyRoadType(description: string, labels: string[]): string {
+  const d = description.toLowerCase()
+  if (labels.includes("FUEL_EFFICIENT")) return "Fuel-efficient"
+  if (/\b(a\d+|autobahn|motorway|highway|interstate|i-\d+)\b/.test(d)) return "Highway"
+  if (/\b(b\d+|country|landstr|backroad|scenic)\b/.test(d)) return "Country road"
+  return "Alternate route"
 }
 
 type DisplayResult = {
@@ -365,7 +402,71 @@ export function DemoSection() {
                   </p>
                 )}
 
-                <div className="mt-4 max-h-96 space-y-2 overflow-y-auto pr-1">
+                {result.routes.length > 0 && (
+                  <div className="mt-6">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                      <Navigation className="h-4 w-4 text-primary" />
+                      Route options at {result.best_departure_time}
+                    </div>
+                    <RouteMap routes={result.routes} />
+                    <div className="mt-3 space-y-2">
+                      {result.routes.map((route) => {
+                        const roadType = classifyRoadType(route.description, route.labels)
+                        return (
+                          <div
+                            key={route.index}
+                            className={`rounded-xl p-4 transition-colors ${
+                              route.is_fastest
+                                ? "border-2 border-primary bg-primary/10"
+                                : "border border-border/50 bg-secondary/30"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  {route.is_fastest && (
+                                    <Trophy className="h-4 w-4 flex-shrink-0 text-primary" />
+                                  )}
+                                  <span className="truncate font-medium">
+                                    {route.description || `Route ${route.index + 1}`}
+                                  </span>
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                                  <span>{roadType}</span>
+                                  <span>{formatKm(route.distance_meters)}</span>
+                                  {route.is_fastest && (
+                                    <span className="font-semibold text-primary">
+                                      Fastest option
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div
+                                  className={`text-xl font-bold ${
+                                    route.is_fastest ? "text-primary" : ""
+                                  }`}
+                                >
+                                  {formatDuration(route.duration)}
+                                </div>
+                                {route.is_fastest && route.saves_minutes_vs_slowest > 0 && (
+                                  <div className="text-xs font-medium text-primary">
+                                    Save {route.saves_minutes_vs_slowest} min vs slowest
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-6 mb-2 text-sm font-semibold text-muted-foreground">
+                  Time slot comparison
+                </div>
+                <div className="mt-2 max-h-96 space-y-2 overflow-y-auto pr-1">
                   {displayResults.map((row, index) => (
                     <motion.button
                       key={`${row.time}-${index}`}
