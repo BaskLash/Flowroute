@@ -3,9 +3,18 @@
 import { useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import { useInView } from "framer-motion"
-import { AlertCircle, ArrowRight, CheckCircle2, Clock, Loader2, MapPin } from "lucide-react"
+import {
+  AlertCircle,
+  ArrowRight,
+  CalendarClock,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  MapPin,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { AddressAutocomplete } from "@/components/traffic/address-autocomplete"
 import { useSectionView } from "@/hooks/use-section-view"
 import {
   trackCta,
@@ -29,10 +38,13 @@ type AnalyzeResponse = {
   current_duration: number
   best_duration: number
   best_departure_time: string
+  worst_duration: number
+  worst_departure_time: string
   time_saved: number
   timeline: TimelineEntry[]
   window_start: string
   window_end: string
+  projected_to_next_week: boolean
   demo_mode: boolean
 }
 
@@ -53,7 +65,7 @@ function formatDuration(min: number): string {
 function classifyTimeline(data: AnalyzeResponse): DisplayResult[] {
   if (data.timeline.length === 0) return []
   const best = data.best_duration
-  const worst = Math.max(...data.timeline.map((e) => e.duration))
+  const worst = data.worst_duration
   const range = Math.max(1, worst - best)
 
   return data.timeline.map((entry) => {
@@ -74,18 +86,23 @@ function classifyTimeline(data: AnalyzeResponse): DisplayResult[] {
 export function DemoSection() {
   const ref = useSectionView<HTMLElement>("demo")
   const isInView = useInView(ref, { once: true, margin: "-100px" })
+  const [origin, setOrigin] = useState("")
+  const [destination, setDestination] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<AnalyzeResponse | null>(null)
   const resultsReported = useRef(false)
 
-  const originRef = useRef<HTMLInputElement>(null)
-  const destinationRef = useRef<HTMLInputElement>(null)
   const startTimeRef = useRef<HTMLInputElement>(null)
   const endTimeRef = useRef<HTMLInputElement>(null)
 
   const firstFocusAt = useRef<number | null>(null)
   const submitAttempts = useRef(0)
+  const fieldHasValueAtBlur = useRef<Record<DemoField, number>>({
+    origin: 0,
+    destination: 0,
+    time_window: 0,
+  })
 
   const displayResults = useMemo(
     () => (result ? classifyTimeline(result) : []),
@@ -97,18 +114,18 @@ export function DemoSection() {
     trackDemoFieldFocus(field)
   }
 
-  const onFieldBlur = (field: DemoField, el: HTMLInputElement | null) => {
-    if (!el) return
-    const value = el.value.trim()
-    trackDemoFieldChange(field, value.length > 0, value.length)
+  const onFieldBlurValue = (field: DemoField, value: string) => {
+    const trimmed = value.trim()
+    fieldHasValueAtBlur.current[field] = trimmed.length
+    trackDemoFieldChange(field, trimmed.length > 0, trimmed.length)
   }
 
   const handleSubmit = async () => {
     submitAttempts.current += 1
     const attempt = submitAttempts.current
 
-    const origin = originRef.current?.value.trim() ?? ""
-    const destination = destinationRef.current?.value.trim() ?? ""
+    const o = origin.trim()
+    const d = destination.trim()
     const startTime = startTimeRef.current?.value.trim() ?? ""
     const endTime = endTimeRef.current?.value.trim() ?? ""
 
@@ -122,15 +139,15 @@ export function DemoSection() {
     })
 
     trackDemoSubmit({
-      origin_present: origin.length > 0,
-      destination_present: destination.length > 0,
+      origin_present: o.length > 0,
+      destination_present: d.length > 0,
       time_window_present: startTime.length > 0 || endTime.length > 0,
       form_fill_ms: formFillMs,
       attempt_number: attempt,
     })
     if (attempt > 1) trackDemoRetry(attempt)
 
-    if (!origin || !destination) {
+    if (!o || !d) {
       setError("Please enter both an origin and a destination.")
       return
     }
@@ -145,8 +162,8 @@ export function DemoSection() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          origin,
-          destination,
+          origin: o,
+          destination: d,
           start_time: startTime || undefined,
           end_time: endTime || undefined,
         }),
@@ -213,28 +230,32 @@ export function DemoSection() {
         >
           <div className="rounded-2xl border border-border/50 bg-card/50 p-6 backdrop-blur-sm sm:p-8">
             <div className="space-y-4">
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  ref={originRef}
-                  type="text"
-                  placeholder="From: address, city, postal code"
-                  className="h-12 bg-secondary/50 pl-10"
-                  onFocus={() => onFieldFocus("origin")}
-                  onBlur={(e) => onFieldBlur("origin", e.currentTarget)}
-                />
-              </div>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" />
-                <Input
-                  ref={destinationRef}
-                  type="text"
-                  placeholder="To: address, city, postal code"
-                  className="h-12 bg-secondary/50 pl-10"
-                  onFocus={() => onFieldFocus("destination")}
-                  onBlur={(e) => onFieldBlur("destination", e.currentTarget)}
-                />
-              </div>
+              <AddressAutocomplete
+                value={origin}
+                onValueChange={setOrigin}
+                placeholder="From: address, city, postal code"
+                ariaLabel="Origin"
+                inputClassName="h-12 bg-secondary/50 pl-10"
+                lang="en"
+                leftSlot={
+                  <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                }
+                onFocus={() => onFieldFocus("origin")}
+                onBlur={() => onFieldBlurValue("origin", origin)}
+              />
+              <AddressAutocomplete
+                value={destination}
+                onValueChange={setDestination}
+                placeholder="To: address, city, postal code"
+                ariaLabel="Destination"
+                inputClassName="h-12 bg-secondary/50 pl-10"
+                lang="en"
+                leftSlot={
+                  <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-primary" />
+                }
+                onFocus={() => onFieldFocus("destination")}
+                onBlur={() => onFieldBlurValue("destination", destination)}
+              />
               <div className="grid grid-cols-2 gap-3">
                 <div className="relative">
                   <Clock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
@@ -244,7 +265,9 @@ export function DemoSection() {
                     aria-label="Earliest departure"
                     className="h-12 bg-secondary/50 pl-10"
                     onFocus={() => onFieldFocus("time_window")}
-                    onBlur={(e) => onFieldBlur("time_window", e.currentTarget)}
+                    onBlur={(e) =>
+                      onFieldBlurValue("time_window", e.currentTarget.value)
+                    }
                   />
                 </div>
                 <div className="relative">
@@ -255,7 +278,9 @@ export function DemoSection() {
                     aria-label="Latest departure"
                     className="h-12 bg-secondary/50 pl-10"
                     onFocus={() => onFieldFocus("time_window")}
-                    onBlur={(e) => onFieldBlur("time_window", e.currentTarget)}
+                    onBlur={(e) =>
+                      onFieldBlurValue("time_window", e.currentTarget.value)
+                    }
                   />
                 </div>
               </div>
@@ -302,6 +327,37 @@ export function DemoSection() {
                     {result.window_start} – {result.window_end}
                   </span>
                 </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl border border-border/50 bg-secondary/30 p-3 sm:grid-cols-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Best</div>
+                    <div className="font-semibold">
+                      {formatDuration(result.best_duration)} @ {result.best_departure_time}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Worst</div>
+                    <div className="font-semibold">
+                      {formatDuration(result.worst_duration)} @ {result.worst_departure_time}
+                    </div>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <div className="text-xs text-muted-foreground">Save vs worst</div>
+                    <div className="font-semibold text-primary">
+                      {result.time_saved > 0
+                        ? `${result.time_saved} min`
+                        : "no spread"}
+                    </div>
+                  </div>
+                </div>
+
+                {result.projected_to_next_week && (
+                  <p className="mt-3 flex items-start gap-2 rounded-md bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                    <CalendarClock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                    Your time window has already passed today, so we're showing the
+                    historical traffic pattern for the same weekday next week.
+                  </p>
+                )}
 
                 {result.demo_mode && (
                   <p className="mt-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
@@ -360,7 +416,7 @@ export function DemoSection() {
                           row.saved_minutes !== undefined &&
                           row.saved_minutes > 0 && (
                             <div className="text-sm font-medium text-primary">
-                              Save {row.saved_minutes} min
+                              Save {row.saved_minutes} min vs peak
                             </div>
                           )}
                       </div>

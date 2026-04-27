@@ -4,6 +4,7 @@ import { z } from "zod"
 import {
   buildSlots,
   DEFAULT_WINDOW_HOURS,
+  ensureFutureWindow,
   formatHHMM,
   parseTimeInput,
   resolveSlots,
@@ -49,23 +50,41 @@ export async function POST(req: Request) {
 
   const now = new Date()
 
-  let windowStart: Date
-  let windowEnd: Date
+  let rawWindowStart: Date
+  let rawWindowEnd: Date
   try {
-    windowStart = start_time
+    rawWindowStart = start_time
       ? parseTimeInput(start_time, now)
-      : new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0)
-    windowEnd = end_time
+      : new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+          now.getHours(),
+          now.getMinutes(),
+          0,
+          0,
+        )
+    rawWindowEnd = end_time
       ? parseTimeInput(end_time, now)
-      : new Date(windowStart.getTime() + DEFAULT_WINDOW_HOURS * 60 * 60 * 1000)
+      : new Date(rawWindowStart.getTime() + DEFAULT_WINDOW_HOURS * 60 * 60 * 1000)
   } catch (err) {
     const message = err instanceof TrafficError ? err.message : "Invalid time format"
     return NextResponse.json({ detail: message }, { status: 400 })
   }
 
-  if (windowEnd.getTime() <= windowStart.getTime()) {
-    windowEnd = new Date(windowEnd.getTime() + 24 * 60 * 60 * 1000)
+  if (rawWindowEnd.getTime() <= rawWindowStart.getTime()) {
+    rawWindowEnd = new Date(rawWindowEnd.getTime() + 24 * 60 * 60 * 1000)
   }
+
+  // Project the window to the future when needed. Google's TRAFFIC_AWARE_OPTIMAL
+  // model only returns predictive durations for future timestamps; without this
+  // shift, any past slot would collapse to "now+60s" and every slot would
+  // return the same number — exactly the bug we're fixing.
+  const { start: windowStart, end: windowEnd, projected } = ensureFutureWindow(
+    rawWindowStart,
+    rawWindowEnd,
+    now,
+  )
 
   const slots = buildSlots(windowStart, windowEnd)
   if (slots.length === 0) {
@@ -115,17 +134,27 @@ export async function POST(req: Request) {
   }
 
   const current = timeline[0]
-  const best = timeline.reduce((acc, e) => (e.duration < acc.duration ? e : acc), timeline[0])
-  const timeSaved = Math.max(0, current.duration - best.duration)
+  const best = timeline.reduce(
+    (acc, e) => (e.duration < acc.duration ? e : acc),
+    timeline[0],
+  )
+  const worst = timeline.reduce(
+    (acc, e) => (e.duration > acc.duration ? e : acc),
+    timeline[0],
+  )
+  const timeSaved = Math.max(0, worst.duration - best.duration)
 
   const payload: AnalyzeResponse = {
     current_duration: current.duration,
     best_duration: best.duration,
     best_departure_time: best.time,
+    worst_duration: worst.duration,
+    worst_departure_time: worst.time,
     time_saved: timeSaved,
     timeline,
     window_start: formatHHMM(windowStart),
     window_end: formatHHMM(windowEnd),
+    projected_to_next_week: projected,
     demo_mode: resolved.demoMode,
   }
 

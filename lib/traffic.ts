@@ -21,10 +21,17 @@ export type AnalyzeResponse = {
   current_duration: number
   best_duration: number
   best_departure_time: string
+  worst_duration: number
+  worst_departure_time: string
+  /** worst_duration - best_duration: savings vs the worst slot in the window. */
   time_saved: number
   timeline: TimelineEntry[]
   window_start: string
   window_end: string
+  /** True when the requested window was in the past and was projected forward
+   *  to the next occurrence of the same weekday so historical-pattern data
+   *  could be retrieved. */
+  projected_to_next_week: boolean
   demo_mode: boolean
 }
 
@@ -65,6 +72,33 @@ export function buildSlots(windowStart: Date, windowEnd: Date): Date[] {
   return slots
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+const SLOT_FUTURE_BUFFER_MS = 60_000
+
+/**
+ * Google's Routes API uses predictive traffic only when departureTime is in
+ * the future. If the user's requested window has already passed (e.g. asking
+ * at 10:00 about a 07:00–09:00 commute), we shift the entire window forward
+ * by whole weeks so each slot lands on the same weekday + time-of-day in the
+ * future. Same weekday pattern → same historical traffic profile.
+ */
+export function ensureFutureWindow(
+  start: Date,
+  end: Date,
+  now: Date = new Date(),
+): { start: Date; end: Date; projected: boolean } {
+  if (end.getTime() > now.getTime() + SLOT_FUTURE_BUFFER_MS) {
+    return { start, end, projected: false }
+  }
+  let shiftedStart = new Date(start)
+  let shiftedEnd = new Date(end)
+  while (shiftedEnd.getTime() <= now.getTime() + SLOT_FUTURE_BUFFER_MS) {
+    shiftedStart = new Date(shiftedStart.getTime() + 7 * DAY_MS)
+    shiftedEnd = new Date(shiftedEnd.getTime() + 7 * DAY_MS)
+  }
+  return { start: shiftedStart, end: shiftedEnd, projected: true }
+}
+
 export function formatHHMM(date: Date): string {
   const h = String(date.getHours()).padStart(2, "0")
   const m = String(date.getMinutes()).padStart(2, "0")
@@ -99,7 +133,12 @@ async function fetchSingleSlot(
     origins: [{ waypoint: { address: origin } }],
     destinations: [{ waypoint: { address: destination } }],
     travelMode: "DRIVE",
-    routingPreference: "TRAFFIC_AWARE",
+    // TRAFFIC_AWARE_OPTIMAL is the same model Google Maps itself uses for
+    // directions: extensive historical traffic + live conditions. Combined
+    // with a future departureTime, it returns the predictive duration for
+    // that specific weekday + time-of-day. Slightly more expensive per call
+    // than TRAFFIC_AWARE, but required for accurate historical comparisons.
+    routingPreference: "TRAFFIC_AWARE_OPTIMAL",
     departureTime: departureRfc3339,
   }
 
