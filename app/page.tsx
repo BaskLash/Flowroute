@@ -4,7 +4,6 @@ import { ImpactSection } from "@/components/landing/impact-section"
 import { RealitySection } from "@/components/landing/reality-section"
 import { ProblemsSection } from "@/components/landing/problems-section"
 import { SolutionSection } from "@/components/landing/solution-section"
-import { DemoSection } from "@/components/landing/demo-section"
 import { UseCasesSection } from "@/components/landing/use-cases-section"
 import { FutureSection } from "@/components/landing/future-section"
 import { BlogPreviewSection } from "@/components/landing/blog-preview-section"
@@ -21,7 +20,6 @@ export default function HomePage() {
       <RealitySection />
       <ProblemsSection />
       <SolutionSection />
-      <DemoSection />
       <UseCasesSection />
       <FutureSection />
       <BlogPreviewSection />

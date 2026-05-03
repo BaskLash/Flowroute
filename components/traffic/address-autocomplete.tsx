@@ -1,19 +1,22 @@
 "use client"
 
 import * as React from "react"
-import { Loader2 } from "lucide-react"
+import { CheckCircle2, Loader2, LocateFixed } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
   trackAddressSearch,
   trackAddressSuggestionPick,
+  trackUseCurrentLocation,
 } from "@/lib/analytics"
 
 const PHOTON_URL = "https://photon.komoot.io/api/"
+const PHOTON_REVERSE_URL = "https://photon.komoot.io/reverse"
 const DEBOUNCE_MS = 250
 const MIN_QUERY_LEN = 3
 const MAX_RESULTS = 6
+const SUCCESS_FLASH_MS = 1400
 
 type PhotonFeature = {
   geometry?: { coordinates?: [number, number] }
@@ -84,6 +87,8 @@ export type AddressAutocompleteProps = {
   bias?: { lon: number; lat: number }
   /** Locale hint for Photon (e.g. "de", "en"). */
   lang?: string
+  /** Render a "Use current location" button inside the input. */
+  enableCurrentLocation?: boolean
   onFocus?: () => void
   onBlur?: () => void
 }
@@ -99,6 +104,7 @@ export function AddressAutocomplete({
   leftSlot,
   bias,
   lang,
+  enableCurrentLocation = false,
   onFocus,
   onBlur,
 }: AddressAutocompleteProps) {
@@ -106,13 +112,17 @@ export function AddressAutocomplete({
   const [open, setOpen] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
   const [activeIndex, setActiveIndex] = React.useState(-1)
+  const [geoLoading, setGeoLoading] = React.useState(false)
+  const [geoSuccess, setGeoSuccess] = React.useState(false)
+  const [geoError, setGeoError] = React.useState<string | null>(null)
 
   const containerRef = React.useRef<HTMLDivElement>(null)
   const debounceRef = React.useRef<number | null>(null)
   const abortRef = React.useRef<AbortController | null>(null)
-  // When the user picks a suggestion we also call onValueChange, which would
-  // re-trigger the effect below and immediately open the dropdown again with
-  // the same query. This flag suppresses that round-trip.
+  const successTimerRef = React.useRef<number | null>(null)
+  // When the user picks a suggestion (or geolocates) we also call
+  // onValueChange, which would re-trigger the lookup effect and immediately
+  // open the dropdown again with the same query. This flag suppresses that.
   const skipNextLookup = React.useRef(false)
 
   React.useEffect(() => {
@@ -182,6 +192,12 @@ export function AddressAutocomplete({
     return () => document.removeEventListener("mousedown", onDocClick)
   }, [])
 
+  React.useEffect(() => {
+    return () => {
+      if (successTimerRef.current) window.clearTimeout(successTimerRef.current)
+    }
+  }, [])
+
   const pick = (s: Suggestion, method: "click" | "keyboard") => {
     skipNextLookup.current = true
     const position = suggestions.findIndex((x) => x.id === s.id)
@@ -194,6 +210,80 @@ export function AddressAutocomplete({
       method,
       result_length: s.label.length,
     })
+  }
+
+  const flashSuccess = () => {
+    setGeoSuccess(true)
+    if (successTimerRef.current) window.clearTimeout(successTimerRef.current)
+    successTimerRef.current = window.setTimeout(
+      () => setGeoSuccess(false),
+      SUCCESS_FLASH_MS,
+    )
+  }
+
+  const handleUseCurrentLocation = () => {
+    setGeoError(null)
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoError("Location isn't available on this device. Please type your address.")
+      trackUseCurrentLocation({ field, status: "error" })
+      return
+    }
+    setGeoLoading(true)
+    trackUseCurrentLocation({ field, status: "request" })
+    const startedAt = performance.now()
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords
+          const params = new URLSearchParams({
+            lat: String(latitude),
+            lon: String(longitude),
+          })
+          if (lang) params.set("lang", lang)
+          const resp = await fetch(`${PHOTON_REVERSE_URL}?${params.toString()}`)
+          if (!resp.ok) throw new Error(String(resp.status))
+          const data = (await resp.json()) as { features?: PhotonFeature[] }
+          const first = (data.features ?? [])[0]
+          const formatted = first ? formatSuggestion(first) : null
+          if (!formatted) throw new Error("no_result")
+          skipNextLookup.current = true
+          onValueChange(formatted.label)
+          setOpen(false)
+          setActiveIndex(-1)
+          flashSuccess()
+          trackUseCurrentLocation({
+            field,
+            status: "success",
+            latency_ms: Math.round(performance.now() - startedAt),
+          })
+        } catch {
+          setGeoError("We found your location but couldn't resolve the address. Please type it.")
+          trackUseCurrentLocation({
+            field,
+            status: "error",
+            latency_ms: Math.round(performance.now() - startedAt),
+          })
+        } finally {
+          setGeoLoading(false)
+        }
+      },
+      (err) => {
+        setGeoLoading(false)
+        const denied = err.code === err.PERMISSION_DENIED
+        setGeoError(
+          denied
+            ? "Location access is blocked. Allow it in your browser settings, or type your address."
+            : "Couldn't get your location. Please try again or type your address.",
+        )
+        trackUseCurrentLocation({
+          field,
+          status: denied ? "denied" : "error",
+          latency_ms: Math.round(performance.now() - startedAt),
+        })
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 },
+    )
   }
 
   const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
@@ -219,6 +309,9 @@ export function AddressAutocomplete({
     }
   }
 
+  const showButton = enableCurrentLocation
+  const inputPaddingRight = showButton ? "pr-12" : undefined
+
   return (
     <div ref={containerRef} className={cn("relative", className)}>
       {leftSlot}
@@ -228,8 +321,11 @@ export function AddressAutocomplete({
         placeholder={placeholder}
         aria-label={ariaLabel}
         autoComplete="off"
-        className={inputClassName}
-        onChange={(e) => onValueChange(e.target.value)}
+        className={cn(inputClassName, inputPaddingRight)}
+        onChange={(e) => {
+          if (geoError) setGeoError(null)
+          onValueChange(e.target.value)
+        }}
         onFocus={() => {
           if (suggestions.length > 0) setOpen(true)
           onFocus?.()
@@ -241,8 +337,37 @@ export function AddressAutocomplete({
         aria-autocomplete="list"
         aria-controls="address-suggestions"
       />
-      {loading && (
-        <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+      {loading && !geoLoading && (
+        <Loader2
+          className={cn(
+            "pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground",
+            showButton ? "right-12" : "right-3",
+          )}
+        />
+      )}
+      {showButton && (
+        <button
+          type="button"
+          onClick={handleUseCurrentLocation}
+          disabled={geoLoading}
+          aria-label="Use current location"
+          title="Use current location"
+          className={cn(
+            "absolute right-1.5 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md transition-colors",
+            "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            "disabled:cursor-not-allowed disabled:opacity-60",
+            geoSuccess && "text-emerald-600 dark:text-emerald-400",
+          )}
+        >
+          {geoLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : geoSuccess ? (
+            <CheckCircle2 className="h-4 w-4" />
+          ) : (
+            <LocateFixed className="h-4 w-4" />
+          )}
+        </button>
       )}
       {open && suggestions.length > 0 && (
         <ul
@@ -276,6 +401,15 @@ export function AddressAutocomplete({
             </li>
           ))}
         </ul>
+      )}
+      {geoError && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="mt-1.5 text-xs text-destructive"
+        >
+          {geoError}
+        </p>
       )}
     </div>
   )

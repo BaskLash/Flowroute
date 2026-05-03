@@ -472,3 +472,17 @@ export function trackAddressSuggestionPick(p: {
 }) {
   track("address_suggestion_pick", p)
 }
+
+/**
+ * Fires for each step of the "Use current location" flow on an address field.
+ * "request" → user tapped the button; "success" → coords resolved + reverse
+ * geocoded; "denied" → permission refused; "error" → any other failure.
+ */
+export function trackUseCurrentLocation(p: {
+  field: "origin" | "destination"
+  status: "request" | "success" | "denied" | "error"
+  /** Latency from request to success/error in ms (omit for "request"). */
+  latency_ms?: number
+}) {
+  track("use_current_location", p)
+}

@@ -10,6 +10,261 @@ export interface BlogPost {
 
 export const blogPosts: BlogPost[] = [
   {
+      slug: "2026-05-05-improving-user-experience-making-route-checking-faster-and-easier",
+  title: "Faster, Simpler, Better: How We’re Improving the flowroute Experience",
+  excerpt:
+    "Small UX improvements can make a huge difference. Here's how we're making route checking faster, easier, and more intuitive — especially on mobile.",
+  readTime: "5 min read",
+  publishedAt: "2026-05-05",
+  author: "flowroute Team",
+  content: `
+# Faster, Simpler, Better: How We’re Improving the flowroute Experience
+
+When building a tool like flowroute, speed isn’t just a feature — it’s the entire point.
+
+After all, we’re helping people save time on their daily commute. So if using the tool itself feels slow or unintuitive, something is off.
+
+Over the past days, we’ve taken a closer look at how users interact with the website. And we’ve identified a few key friction points that we’re now actively improving.
+
+## The Problem: Too Many Small Delays
+
+Individually, the issues we found might seem minor.
+
+But combined, they create unnecessary friction:
+- Entering your current location takes too long
+- Switching between different “From” and “To” scenarios is cumbersome
+- The route-checking feature isn’t immediately accessible
+- Mobile users have to navigate through extra steps just to get started
+
+And here’s the reality: **every extra second or click reduces the likelihood that someone actually uses the tool.**
+
+## 1. Faster Location Input with One Click
+
+One of the biggest usability issues we noticed is how long it takes to manually enter your current location.
+
+Typing your address — especially on mobile — is slow and inconvenient.
+
+### Our Solution
+
+We’re introducing a simple but powerful improvement:
+
+**A one-click button to automatically detect and fill in your current location.**
+
+This means:
+- No more typing your full address
+- No more guesswork
+- Instant input for the “From” field
+
+This alone will significantly speed up the process of checking a route.
+
+### Why This Matters
+
+The faster a user can get started, the more likely they are to actually complete the process.
+
+Reducing friction at the very first step is critical.
+
+## 2. Smarter Handling of “From” and “To”
+
+Another issue we observed is how users sometimes switch contexts.
+
+For example:
+- Checking a route for a colleague
+- Then switching back to their own commute
+- Or reversing “From” and “To” inputs
+
+Right now, this process isn’t as flexible as it should be.
+
+### What We’re Improving
+
+We’re optimizing how both input fields behave:
+- Faster switching between locations
+- More intuitive handling of different scenarios
+- Reduced effort when adjusting routes
+
+The goal is simple: **make it effortless to try different route combinations.**
+
+## 3. Bringing Route Checking to the Hero Section
+
+This is probably the most impactful change.
+
+Currently, users need to:
+1. Open the website  
+2. Find the navigation  
+3. Click “Check My Route”  
+
+On desktop, that’s already an extra step.
+
+On mobile, it’s worse:
+- Open the burger menu  
+- Look for the right option  
+- Then navigate to the tool  
+
+That’s too much friction for something that should be instant.
+
+### The Fix
+
+We’re moving the entire route-checking interface directly into the **hero section**.
+
+This means:
+- The input fields are visible immediately
+- No extra clicks required
+- Users can start typing the moment the page loads
+
+### Why This Is a Game-Changer
+
+The hero section is the most visible part of any website.
+
+By placing the core functionality there:
+- Users instantly understand what the tool does
+- They can act immediately
+- The entire experience becomes faster and more intuitive
+
+Especially on mobile, this will make a huge difference.
+
+## Designing for Speed and Clarity
+
+All of these improvements follow one core principle:
+
+> **The best user experience is the one that requires the least effort.**
+
+No unnecessary clicks.  
+No confusion.  
+No delays.  
+
+Just a clear path from landing on the page to getting a useful result.
+
+## What This Means for You
+
+Once these updates are live, you’ll be able to:
+- Check your route in seconds
+- Instantly use your current location
+- Easily adjust routes and scenarios
+- Get results without navigating through menus
+
+In short: **less friction, more value.**
+
+## Continuous Improvement
+
+This is just the beginning.
+
+Every interaction on the platform helps us understand how to make flowroute better. And often, it’s these small UX improvements that create the biggest real-world impact.
+
+Because saving 20 minutes on your commute starts with saving a few seconds on the website.
+
+---
+
+*Want to experience a faster, smarter way to plan your commute? Try flowroute and see how quickly you can find the optimal departure time.*
+`,
+},
+  
+  {
+      slug: "2026-04-28-why-early-traffic-data-matters-for-building-better-tools",
+  title: "What Early Traffic Data Reveals About Building a Tool People Actually Use",
+  excerpt:
+    "Early website traffic is more than just numbers — it's a signal. Here's what we're learning from real users and how it shapes the future of smarter commuting.",
+  readTime: "4 min read",
+  publishedAt: "2026-04-28",
+  author: "flowroute Team",
+  content: `
+# What Early Traffic Data Reveals About Building a Tool People Actually Use
+
+Building a new tool is one thing.
+
+Getting real people to use it — consistently, meaningfully, and willingly — is something entirely different.
+
+Over the past weeks, we've been closely watching how users interact with our website. And one thing stands out: **people are finding us**.
+
+## Traffic Is a Signal — Not the Goal
+
+It’s easy to get excited about growing visitor numbers. And yes, seeing consistent traffic come in is a strong indicator that interest exists.
+
+But raw traffic alone doesn’t prove success.
+
+What truly matters is what happens *after* someone lands on the site:
+- Do they explore?
+- Do they understand the value?
+- Do they try the tool?
+- Do they come back?
+
+This is where a product begins to prove itself — not in theory, but in real-world behavior.
+
+## Why Validation Takes Time
+
+Right now, we’re in an important phase: **validation**.
+
+We’re seeing new users arrive regularly, even though the numbers naturally fluctuate. That’s expected at this stage. Early growth is rarely linear — it comes in waves, just like traffic itself.
+
+What matters more is the trend over time:
+- Are more people discovering the tool?
+- Is engagement improving?
+- Are users finding real value?
+
+These are the questions that will define what comes next.
+
+## Learning From Real User Behavior
+
+One of the biggest advantages of having early traffic is insight.
+
+Every visit tells a story.
+
+We’re already identifying patterns:
+- Where users spend the most time
+- Where they drop off
+- What captures attention — and what doesn’t
+
+And based on this, we’ve already spotted **several areas for improvement**.
+
+## Improving What Actually Matters
+
+Instead of guessing what users might want, we can now focus on what the data shows.
+
+Some of the key areas we're working on include:
+- Making the value of the tool clearer within seconds
+- Improving the user flow from landing to action
+- Reducing friction when trying the tool
+- Communicating results more effectively
+
+These aren’t massive overhauls. They’re **targeted improvements** — the kind that compound over time.
+
+## The Bigger Picture
+
+Every successful product goes through this phase.
+
+You launch.  
+You observe.  
+You adjust.  
+
+And then you repeat.
+
+The goal isn’t perfection from day one. The goal is progress based on reality — not assumptions.
+
+Traffic gives us that reality.
+
+## What Happens Next?
+
+The coming weeks will be especially interesting.
+
+As more users discover the platform, we’ll gain a clearer picture of:
+- How strong the real demand is
+- How users behave over time
+- What improvements have the biggest impact
+
+This is where ideas turn into validated solutions.
+
+## From Visitors to Real Value
+
+At the end of the day, this isn’t about website traffic.
+
+It’s about helping people solve a real problem: **wasting time in traffic due to poor timing decisions**.
+
+If we can turn curiosity into real usage — and usage into real time savings — then we’re on the right track.
+
+---
+
+*Curious what smarter timing could do for your daily commute? Try flowroute and discover the best time to leave — based on real data, not guesswork.*
+`,
+},
+  {
     slug: "2026-04-21-how-better-timing-saves-you-gas-money-and-time",
     title: "How Better Timing Saves You Gas, Money, and Time",
     excerpt:
